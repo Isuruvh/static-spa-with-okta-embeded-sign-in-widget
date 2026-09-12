@@ -1,56 +1,92 @@
-{{> identity-engine/links.md }}
+# Okta Auth JS - Static Single Page Application (Static SPA) Sample
 
-# Embedded Auth with SDKs Sample Application
+This sample demonstrates how to integrate the `@okta/okta-auth-js` SDK and the **Okta Embedded Sign-In Widget** into a plain/static HTML & JavaScript Single Page Application (SPA) to establish authentication with an Okta Authorization Server.
 
-## Introduction
+---
 
-> :grey_exclamation: The use of this Sample uses an SDK that requires usage of the Okta Identity Engine. This functionality is in general availability but is being gradually rolled out to customers. If you want
-to request to gain access to the Okta Identity Engine, please reach out to your account manager. If you do not have an account manager, please reach out to oie@okta.com for more information.
+## Overview & Architecture
 
-This Sample Application will show you the best practices for integrating Authentication into your app
-using [Okta's Identity Engine][]. Specifically, this application will cover some basic needed use cases to get you up and running quickly with Okta.
-These Examples are:
+This application showcases client-side authentication flows using Okta Identity Engine (IDX) / Interaction Code Flow and classic authentication (`authn`).
 
-1. Sign In
-2. Sign Out
-3. Sign Up
-4. Sign In/Sign Up with Social Identity Providers
-5. Sign In with Multifactor Authentication using Email or Phone
+Key components include:
+* **Okta Auth JS SDK (`@okta/okta-auth-js`)**: Client-side library managing authentication tokens, session states, and Okta Identity Engine (IDX) APIs.
+* **Okta Sign-In Widget (`@okta/okta-signin-widget`)**: Embedded widget component providing pre-built UI flows for login, MFA, and self-service password recovery.
+* **Express Development Server**: Serves static HTML/JS assets and proxies OAuth2 endpoints to prevent CORS issues during local development.
 
-{{! For information and guides on how to build your app with this sample, please take a look at the [ExpressJS guides for Embedded Authentication][] }}
+---
 
-## Installation & Running The App
 
-{{> identity-engine/setup.md }}
+## Prerequisites
 
-### Commands
+* **Node.js**: `>=20.11.0`
+* **Package Manager**: **Yarn 1.22.x** (`1.22.22` recommended)
+* An active **Okta Developer Org** with a Single-Page Application (SPA) integration configured.
 
-If running from the workspace directory: `yarn workspace {{name}} start`
+---
 
-| Command               | Description                    |
-| --------------------- | ------------------------------ |
-| `yarn start`          | Starts the app server |
+## Configuration
 
-{{! To see some examples for use cases using this sample application, please take a look at the [ExpressJS guides for Embedded Authentication][] }}
+The application reads configuration parameters from the URL query parameters or falls back to standard inline defaults in `app.js`.
 
-## Implementation Details
+### Key Configuration Options
 
-This sample app follows classic ExpressJS routing structure and uses [mustache-express](https://www.npmjs.com/package/mustache-express) as the view engine. Below is how the specific scenarios map the routes:
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `issuer` | `string` | Okta Org Authorization Server URL (e.g., `https://{yourOktaDomain}/oauth2/default`) |
+| `clientId` | `string` | Client ID from your Okta SPA application settings |
+| `redirectUri` | `string` | Redirect callback URL (default: `http://localhost:8080/login/callback`) |
+| `scopes` | `Array<string>` | Requested OIDC scopes (e.g., `['openid', 'email', 'profile']`) |
+| `authMethod` | `string` | Authentication method: `"form"` (custom form), `"widget"` (embedded sign-in widget), or `"redirect"` |
+| `storage` | `string` | Token storage location (`"sessionStorage"`, `"localStorage"`, `"memory"`, or `"cookie"`) |
+| `useInteractionCodeFlow` | `boolean` | Set to `true` to enable Okta Identity Engine (IDX) Interaction Code Flow |
 
-* Sign In Flow -> [routes/login.js](./web-server/routes/login.js)
+---
 
-* Self Service Registration -> [routes/register.js](./web-server/routes/register.js)
+## Installation & Running
 
-* Self Service Password Recovery ->  [routes/recover-password.js](./web-server/routes/recover-password.js)
+### 1. Build the Root SDK
 
-* Multifactor -> [routes/authenticators.js](./web-server/routes/authenticators.js)
+Before starting the sample application, compile the parent Okta Auth JS SDK:
 
-* Logout -> [routes/logout.js](./web-server/routes/logout.js)
+```bash
+# Install workspace dependencies
+yarn install
 
-{{> identity-engine/custom-storage-provider.md }}
+# Build the SDK artifacts (CommonJS, ESM, and browser bundles)
+yarn build
 
-### Centralized transaction (idxStates) handler
+. Start the Static SPA Server
+Run the static-spa workspace command:
 
-The [Okta's Identity Engine][] is a state machine, it responses different states based on the request. To handle the complex response states, a centralized transaction handler pattern is introduced in this sample. It handles the response based on [transaction.status](https://github.com/okta/okta-auth-js/blob/master/docs/idx.md#status), then dispatches the requests to proper routes based on [transaction.nextStep](https://github.com/okta/okta-auth-js/blob/master/docs/idx.md#nextstep).
+yarn workspace @okta/samples.static-spa start
+Or start the Express server directly from the workspace root:
 
-See implementation details in [handleTransaction.js](./web-server/utils/handleTransaction.js).
+yarn start
+The application will launch at http://localhost:8080.
+
+Features & Auth Flow Implementation
+1. Initializing OktaAuth Client
+The OktaAuth client instance is instantiated with the issuer, client ID, and storage configuration:
+const authClient = new OktaAuth({
+  issuer: config.issuer,
+  clientId: config.clientId,
+  redirectUri: config.redirectUri,
+  scopes: config.scopes,
+  useInteractionCodeFlow: true,
+  tokenManager: {
+    storage: config.storage
+  }
+});
+
+2. Embedded Authentication Flow (Custom Form / IDX)
+Credentials collected via the embedded login form trigger authClient.idx.authenticate:
+
+authClient.idx.authenticate({ username, password })
+  .then(handleTransaction)
+  .catch(showError);
+3. Handling Transactions & MFA
+The handleTransaction function evaluates the response status:
+
+PENDING: Renders additional MFA or step-up authentication prompts.
+SUCCESS: Stores OIDC tokens in session storage and concludes authentication.
+FAILURE: Renders error messages.
